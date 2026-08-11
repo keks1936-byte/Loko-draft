@@ -60,7 +60,7 @@ export default function Home(){
   };
   const choose=(player:Player)=>{if(confirmation||!isSafeChoice(player))return;const slotIndex=targetSlotFor(player,picked);if(slotIndex<0)return;const next=[...picked];next[slotIndex]={...player,draftPosition:slots[slotIndex]};setPicked(next);setConfirmation(player);timer.current=setTimeout(()=>{setConfirmation(null);setRound(r=>r+1)},850)};
 
-  if(!started)return <main className="landing"><div className="rail railTop"/><section className="hero"><div className="badge">МОСКВА · ЧЕРКИЗОВО</div><h1>LOKO<br/><span>DRAFT</span></h1><p>Собери величайший «Локомотив» в истории. Рейтинги скрыты до финала — выбирай сердцем и знанием истории.</p><button onClick={start}>НАЧАТЬ ДРАФТ <span>→</span></button><small>11 раундов · 16 исторических команд · универсальные позиции</small></section><div className="rail railBottom"/></main>;
+  if(!started)return <main className="landing"><div className="rail railTop"/><section className="hero"><div className="badge">МОСКВА · ЧЕРКИЗОВО</div><h1>LOKO<br/><span>DRAFT</span></h1><p>Собери величайший «Локомотив» в истории. Рейтинги скрыты до финала — выбирай сердцем и знанием истории.</p><button onClick={start}>НАЧАТЬ ДРАФТ <span>→</span></button><small>11 раундов · {seasons.length} исторических команд · универсальные позиции</small></section><div className="rail railBottom"/></main>;
 
   if(round>=11){
     const team=picked.filter((x):x is PickedPlayer=>x!==null);

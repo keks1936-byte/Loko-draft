@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Position = 'GK'|'LB'|'CB'|'RB'|'CM'|'LW'|'CAM'|'RW'|'ST';
 type Player = {
@@ -13,7 +13,8 @@ type Player = {
   rating:number;
 };
 type Season = {id:string;name:string;achievement:string;players:Player[]};
-type SlotState = (Player|null)[];
+type PickedPlayer = Player & {draftPosition:Position};
+type SlotState = (PickedPlayer|null)[];
 
 const slots:Position[]=['GK','LB','CB','CB','RB','CM','CM','LW','CAM','RW','ST'];
 const coords=[[50,90],[14,72],[38,74],[62,74],[86,72],[36,52],[64,52],[15,30],[50,28],[85,30],[50,10]];
@@ -113,36 +114,43 @@ export default function Home(){
   const[round,setRound]=useState(0);
   const[picked,setPicked]=useState<SlotState>(Array(11).fill(null));
   const[shareLabel,setShareLabel]=useState('ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ');
+  const[confirmation,setConfirmation]=useState<Player|null>(null);
+  const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[]);
   const current=order[round];
-  const used=useMemo(()=>new Set(picked.filter((x):x is Player=>x!==null).map(x=>x.personId)),[picked]);
-  const start=()=>{setOrder(pickDraftOrder());setPicked(Array(11).fill(null));setRound(0);setShareLabel('ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ');setStarted(true)};
+  const used=useMemo(()=>new Set(picked.filter((x):x is PickedPlayer=>x!==null).map(x=>x.personId)),[picked]);
+  const start=()=>{if(timer.current)clearTimeout(timer.current);setConfirmation(null);setOrder(pickDraftOrder());setPicked(Array(11).fill(null));setRound(0);setShareLabel('ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ');setStarted(true)};
   const isSafeChoice=(player:Player)=>{
     if (!current || used.has(player.personId)) return false;
     const slotIndex=targetSlotFor(player,picked); if (slotIndex<0) return false;
-    const nextPicked=[...picked]; nextPicked[slotIndex]=player;
+    const nextPicked=[...picked]; nextPicked[slotIndex]={...player,draftPosition:slots[slotIndex]};
     const nextUsed=new Set(used); nextUsed.add(player.personId);
     const nextOpen=slots.filter((_,i)=>!nextPicked[i]);
     return canFillAll(nextOpen,order.slice(round+1),nextUsed);
   };
-  const choose=(player:Player)=>{if(!isSafeChoice(player))return;const slotIndex=targetSlotFor(player,picked);if(slotIndex<0)return;const next=[...picked];next[slotIndex]=player;setPicked(next);setRound(r=>r+1)};
+  const choose=(player:Player)=>{if(confirmation||!isSafeChoice(player))return;const slotIndex=targetSlotFor(player,picked);if(slotIndex<0)return;const next=[...picked];next[slotIndex]={...player,draftPosition:slots[slotIndex]};setPicked(next);setConfirmation(player);timer.current=setTimeout(()=>{setConfirmation(null);setRound(r=>r+1)},850)};
 
   if(!started)return <main className="landing"><div className="rail railTop"/><section className="hero"><div className="badge">МОСКВА · ЧЕРКИЗОВО</div><h1>LOKO<br/><span>DRAFT</span></h1><p>Собери величайший «Локомотив» в истории. Рейтинги скрыты до финала — выбирай сердцем и знанием истории.</p><button onClick={start}>НАЧАТЬ ДРАФТ <span>→</span></button><small>11 раундов · 16 исторических команд · универсальные позиции</small></section><div className="rail railBottom"/></main>;
 
   if(round>=11){
-    const team=picked.filter((x):x is Player=>x!==null);
+    const team=picked.filter((x):x is PickedPlayer=>x!==null);
     const avg=Math.round(team.reduce((a,x)=>a+x.rating,0)/team.length);
     const group=(indexes:number[])=>Math.round(indexes.reduce((a,i)=>a+(picked[i]?.rating||0),0)/indexes.length);
-    const share=async()=>{const text=`Я собрал исторический «Локомотив» на ${avg} OVERALL в LOKO DRAFT. Сможешь лучше?`;try{if(navigator.share){await navigator.share({title:'LOKO DRAFT',text,url:window.location.origin})}else{await navigator.clipboard.writeText(`${text} ${window.location.origin}`);setShareLabel('ССЫЛКА СКОПИРОВАНА ✓')}}catch{}};
-    return <main className="resultPage"><div className="topline"><b>LOKO DRAFT</b><span>ФИНАЛ</span></div><section className="resultWrap compactResult"><div className="resultHead"><div><p className="eyebrow">ТВОЙ ВЕЛИЧАЙШИЙ</p><h2>ЛОКОМОТИВ</h2></div><div className="score">{avg}<small>OVERALL</small></div></div><TeamPitch picked={picked} reveal/><div className="metrics"><div><b>{group([7,8,9,10])}</b><span>АТАКА</span></div><div><b>{group([5,6])}</b><span>ПОЛУЗАЩИТА</span></div><div><b>{group([0,1,2,3,4])}</b><span>ОБОРОНА</span></div></div><div className="resultActions"><button className="share" onClick={share}>{shareLabel}</button><button className="again" onClick={start}>СЫГРАТЬ ЕЩЁ РАЗ</button></div></section></main>
+    const attack=group([7,8,9,10]),midfield=group([5,6]),defense=group([0,1,2,3,4]);
+    const legendCount=team.filter(x=>x.rating>=95).length;
+    const championCount=team.filter(player=>seasons.find(season=>season.players.some(x=>x.id===player.id))?.achievement.includes('Чемпион России')).length;
+    const best=team.reduce((winner,player)=>player.rating>winner.rating?player:winner,team[0]);
+    const share=async()=>{const url=window.location.href;const text=`Я собрал Локомотив на ${avg} 🔴🟢\nАтака: ${attack} · Полузащита: ${midfield} · Оборона: ${defense}\nЛегенд: ${legendCount}\nСможешь лучше?\n${url}`;try{if(navigator.share){await navigator.share({title:'LOKO DRAFT',text})}else{await navigator.clipboard.writeText(text);setShareLabel('СКОПИРОВАНО ✓');setTimeout(()=>setShareLabel('ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ'),1500)}}catch{}};
+    return <main className="resultPage"><div className="topline"><b>LOKO DRAFT</b><span>ФИНАЛ</span></div><section className="resultWrap compactResult"><div className="resultHead"><div><p className="eyebrow">ТВОЙ ВЕЛИЧАЙШИЙ</p><h2>ЛОКОМОТИВ</h2></div><div className="score">{avg}<small>OVERALL</small></div></div><div className="finalStats">{legendCount} ЛЕГЕНД · {championCount} ЧЕМПИОНСКИХ ВЕРСИЙ</div><TeamPitch picked={picked} reveal/><div className="metrics"><div><b>{attack}</b><span>АТАКА</span></div><div><b>{midfield}</b><span>ПОЛУЗАЩИТА</span></div><div><b>{defense}</b><span>ОБОРОНА</span></div></div><div className="bestPick"><span>ЛУЧШИЙ ВЫБОР</span><b>{best.shortName} · {best.season} · {best.rating}</b></div><div className="resultActions"><button className="share" onClick={share}>{shareLabel}</button><button className="again" onClick={start}>СЫГРАТЬ ЕЩЁ РАЗ</button></div></section></main>
   }
 
-  return <main className="gamePage"><div className="topline"><b>LOKO DRAFT</b><span>РАУНД {round+1} / 11</span></div><div className="progress"><i style={{width:`${((round+1)/11)*100}%`}}/></div><section className="gameGrid"><div className="seasonPanel"><p className="eyebrow">ВЫБЕРИ ОДНОГО</p><h2>{current?.name}</h2><div className="achievement">{current?.achievement}</div>{current&&<SeasonPitch season={current} used={used} canChoose={isSafeChoice} onChoose={choose}/>}<p className="draftHint">Серые игроки уже выбраны, не подходят в свободный слот или их выбор создаст тупик в следующих раундах.</p></div><aside><p className="eyebrow">МОЙ СОСТАВ · {round}/11</p><TeamPitch picked={picked}/></aside></section></main>
+  return <main className="gamePage"><div className="topline"><b>LOKO DRAFT</b><span>РАУНД {round+1} / 11</span></div><div className="progress"><i style={{width:`${((round+1)/11)*100}%`}}/></div><section className="gameGrid"><div className="seasonPanel"><p className="eyebrow">ВЫБЕРИ ОДНОГО</p><h2>{current?.name}</h2><div className="achievement">{current?.achievement}</div>{current&&<SeasonPitch season={current} used={used} canChoose={isSafeChoice} onChoose={choose} locked={Boolean(confirmation)}/>}<p className="draftHint">Серые игроки уже выбраны, не подходят в свободный слот или их выбор создаст тупик в следующих раундах.</p></div><aside><p className="eyebrow">МОЙ СОСТАВ · {round+(confirmation?1:0)}/11</p><TeamPitch picked={picked}/></aside></section>{confirmation&&<div className="pickOverlay" role="status" aria-live="polite"><div><b>{confirmation.shortName} · {confirmation.season}</b><span>В СОСТАВЕ ✓</span></div></div>}</main>
 }
 
-function SeasonPitch({season,used,canChoose,onChoose}:{season:Season;used:Set<string>;canChoose:(p:Player)=>boolean;onChoose:(p:Player)=>void}){
-  return <div className="pitch seasonPitch"><div className="centerCircle"/>{season.players.map((player,i)=>{const disabled=used.has(player.personId)||!canChoose(player);const[x,y]=coords[i];return <button className="draftPlayer" disabled={disabled} onClick={()=>onChoose(player)} key={player.id} style={{left:`${x}%`,top:`${y}%`}}><span>{player.lineupPosition}</span><b>{player.shortName}</b>{player.positions.length>1&&<small>{player.positions.join(' / ')}</small>}</button>})}</div>
+function SeasonPitch({season,used,canChoose,onChoose,locked}:{season:Season;used:Set<string>;canChoose:(p:Player)=>boolean;onChoose:(p:Player)=>void;locked:boolean}){
+  return <div className="pitch seasonPitch"><div className="centerCircle"/>{season.players.map((player,i)=>{const duplicate=used.has(player.personId);const unavailable=!duplicate&&!canChoose(player);const disabled=locked||duplicate||unavailable;const[x,y]=coords[i];return <button className="draftPlayer" disabled={disabled} onClick={()=>onChoose(player)} key={player.id} title={duplicate?'УЖЕ В СОСТАВЕ':unavailable?'НЕДОСТУПЕН ДЛЯ ЭТОГО ДРАФТА':undefined} style={{left:`${x}%`,top:`${y}%`}}><span>{player.lineupPosition}</span><b>{player.shortName}</b>{player.positions.length>1&&<small>{player.positions.join(' / ')}</small>}{!locked&&disabled&&<em>{duplicate?'УЖЕ В СОСТАВЕ':'НЕДОСТУПЕН ДЛЯ ЭТОГО ДРАФТА'}</em>}</button>})}</div>
 }
 
 function TeamPitch({picked,reveal=false}:{picked:SlotState;reveal?:boolean}){
-  return <div className="pitch teamPitch"><div className="centerCircle"/>{slots.map((slot,i)=>{const player=picked[i];const[x,y]=coords[i];return <div className={`slot ${player?'filled':''}`} key={i} style={{left:`${x}%`,top:`${y}%`}}><div className="shirt">{player?(reveal?player.rating:'✓'):slot}</div><b>{player?player.shortName:slot}</b>{player&&<small>{player.season}</small>}</div>})}</div>
+  return <div className="pitch teamPitch"><div className="centerCircle"/>{slots.map((slot,i)=>{const player=picked[i];const[x,y]=coords[i];const legend=reveal&&player&&player.rating>=95;return <div className={`slot ${player?'filled':''} ${legend?'legend':''}`} key={i} style={{left:`${x}%`,top:`${y}%`}}><div className="shirt">{player?(reveal?player.rating:'✓'):slot}</div><b>{player?player.shortName:slot}</b>{player&&<small>{player.season}</small>}{legend&&<em>LEGEND</em>}</div>})}</div>
 }
